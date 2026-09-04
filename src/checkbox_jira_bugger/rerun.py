@@ -1,6 +1,7 @@
 """Rerun-before-filing: job eligibility, SSH rerun, output parsing."""
 import fnmatch
 import re
+import shlex
 import subprocess
 from dataclasses import dataclass
 from typing import Optional
@@ -15,7 +16,7 @@ class RerunResult:
     error: Optional[str] = None
 
 
-_STATUS_RE = re.compile(r"^(?P<job_id>\S+):\s*(?P<status>pass|fail|skip|crash)\s*$", re.MULTILINE)
+_STATUS_RE = re.compile(r"^(?P<job_id>\S+):\s*(?P<status>pass|fail|skip|crash)\b", re.MULTILINE)
 
 
 def is_job_eligible_for_rerun(job_full_id: str, patterns: list) -> bool:
@@ -38,8 +39,10 @@ def parse_rerun_output(job_id: str, stdout: str, stderr: str, returncode: int) -
 
 def rerun_job(job_id: str, host: str, ssh_config: DutSshConfig) -> RerunResult:
     """SSH into host and rerun job_id via checkbox-cli, returning the parsed result."""
-    env_prefix = " ".join(f"{key}={value}" for key, value in ssh_config.env.items())
-    remote_cmd = f"{env_prefix} checkbox-cli run {job_id}".strip()
+    env_prefix = " ".join(
+        f"{key}={shlex.quote(value)}" for key, value in ssh_config.env.items()
+    )
+    remote_cmd = f"{env_prefix} checkbox-cli run {shlex.quote(job_id)}".strip()
 
     cmd = [
         "ssh",
@@ -57,5 +60,12 @@ def rerun_job(job_id: str, host: str, ssh_config: DutSshConfig) -> RerunResult:
         return RerunResult(status=None, io_log=None, error=f"SSH rerun of {job_id} timed out")
     except OSError as exc:
         return RerunResult(status=None, io_log=None, error=f"SSH rerun of {job_id} failed: {exc}")
+
+    if completed.returncode == 255:
+        return RerunResult(
+            status=None,
+            io_log=completed.stdout,
+            error=f"SSH connection to {host} failed (rc=255)",
+        )
 
     return parse_rerun_output(job_id, completed.stdout, completed.stderr, completed.returncode)
