@@ -198,7 +198,7 @@ def test_deal_with_failed_rerun_pass_skips_bug_filing(mock_jira_cls, mock_rerun_
 @patch("checkbox_jira_bugger.jira_backend.Jira")
 def test_deal_with_failed_rerun_fail_proceeds_to_bug_filing(mock_jira_cls, mock_rerun_job):
     api, mock_jira = _make_api(mock_jira_cls)
-    mock_rerun_job.return_value = RerunResult(status="fail", io_log="new log", error=None)
+    mock_rerun_job.return_value = RerunResult(status="fail", io_log="FRESH_LOG_MARKER", error=None)
 
     with patch.object(api, "search_bug", return_value=[]) as mock_search_bug, \
             patch.object(api, "create_newbug") as mock_create_newbug:
@@ -208,7 +208,7 @@ def test_deal_with_failed_rerun_fail_proceeds_to_bug_filing(mock_jira_cls, mock_
                     "id": "audio/playback",
                     "full_id": "com.canonical.certification::audio/playback",
                     "status": "fail",
-                    "io_log": "old log",
+                    "io_log": "STALE_LOG_MARKER",
                     "certification_status": "blocker",
                 }
             ]
@@ -228,3 +228,10 @@ def test_deal_with_failed_rerun_fail_proceeds_to_bug_filing(mock_jira_cls, mock_
         mock_rerun_job.assert_called_once()
         mock_search_bug.assert_called_once()
         mock_create_newbug.assert_called_once()
+
+        # The bug description passed to create_newbug must carry the FRESH
+        # io_log from the rerun result, not the original (stale) io_log.
+        call_args = mock_create_newbug.call_args
+        bug_description = call_args.args[1] if len(call_args.args) > 1 else call_args.kwargs.get("bug_description")
+        assert "FRESH_LOG_MARKER" in bug_description
+        assert "STALE_LOG_MARKER" not in bug_description
