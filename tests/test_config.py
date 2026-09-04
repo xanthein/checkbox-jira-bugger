@@ -36,3 +36,13 @@ def test_load_dut_ssh_config_no_rerun_section(tmp_path):
     )
     dut_config = config.load_dut_ssh_config(str(ini_path))
     assert dut_config.rerun_job_patterns == []
+
+
+def test_load_dut_ssh_config_env_with_percent(tmp_path):
+    ini_path = tmp_path / "percent_env.ini"
+    ini_path.write_text(
+        "[dut]\nuser = ubuntu\nssh_key = /key\ntimeout = 10\n\n"
+        "[env]\nPROMPT = 100%done\n"
+    )
+    dut_config = config.load_dut_ssh_config(str(ini_path))
+    assert dut_config.env == {"PROMPT": "100%done"}

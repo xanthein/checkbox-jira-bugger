@@ -47,7 +47,7 @@ def load_c3_config(path: str) -> C3Config:
 
 
 def load_dut_ssh_config(path: str) -> DutSshConfig:
-    parser = configparser.ConfigParser()
+    parser = configparser.ConfigParser(interpolation=None)
     parser.optionxform = str
     if not parser.read(path):
         raise FileNotFoundError(f"Could not read dut ssh config file: {path}")
