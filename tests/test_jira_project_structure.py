@@ -47,3 +47,18 @@ def test_platform_enablement_roundtrip_via_dacite():
     assert (
         demarshalled.platform_planning.engineering_plan.key == "BR10-ENG-PLAN"
     )
+
+
+def test_default_nested_fields_are_isolated_between_instances():
+    instance1 = PlatformEnablement()
+    instance2 = PlatformEnablement()
+
+    instance1.platform_planning.summary = "mutated"
+    instance1.platform_planning.engineering_plan.summary = "mutated engineering plan"
+    instance1.platform_execution.dvt1_samples_handling.key = "mutated-key"
+    instance1.platform_closing.platform_mir.summary = "mutated mir"
+
+    assert instance2.platform_planning.summary == "Platform Planning"
+    assert instance2.platform_planning.engineering_plan.summary == "Engineering Plan"
+    assert instance2.platform_execution.dvt1_samples_handling.key == ""
+    assert instance2.platform_closing.platform_mir.summary == "Platform MIR"
