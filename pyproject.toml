@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "checkbox-jira-bugger"
+version = "0.1.0"
+description = "File Jira bugs from checkbox submission reports, with optional rerun-before-filing on the DUT"
+requires-python = ">=3.10"
+dependencies = [
+    "atlassian-python-api",
+    "requests",
+    "certifi",
+    "urllib3",
+    "idna",
+    "charset-normalizer",
+    "gitpython",
+    "dacite",
+    "PyYAML",
+    "distro",
+]
+
+[project.scripts]
+checkbox-jira-bugger = "checkbox_jira_bugger.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
