@@ -1308,6 +1308,10 @@ def deal_with_failed_test_cases_common_test(
         sku_number, sku_name, assignee, tester,
         rerun_on_fail=False, device_info=None, dut_ssh_config=None):
     '''deal with failed test cases
+
+    If rerun_on_fail is True, device_info and dut_ssh_config must both be
+    provided (non-None) by the caller; this function does not validate that
+    precondition itself.
     '''
     if logging.getLogger().getEffectiveLevel() == logging.DEBUG:
         logging.debug("=== Failed item list ===")
@@ -1321,9 +1325,19 @@ def deal_with_failed_test_cases_common_test(
     for item in data['results']:
         logging.debug('check item {}'.format(item['id']))
         if item['status'] == 'fail':
-            if rerun_on_fail and is_job_eligible_for_rerun(item['full_id'], dut_ssh_config.rerun_job_patterns):
-                rerun_result = rerun_job(item['full_id'], device_info.ip_address, dut_ssh_config)
-                if rerun_result.error:
+            if rerun_on_fail:
+                try:
+                    eligible = is_job_eligible_for_rerun(item['full_id'], dut_ssh_config.rerun_job_patterns)
+                    rerun_result = rerun_job(item['full_id'], device_info.ip_address, dut_ssh_config) if eligible else None
+                except Exception as exc:
+                    logging.warning(
+                        "Unexpected error during rerun of %s: %s; proceeding with original result",
+                        item['full_id'], exc)
+                    rerun_result = None
+
+                if rerun_result is None:
+                    pass
+                elif rerun_result.error:
                     logging.warning("Rerun failed for %s: %s; proceeding with original result",
                                      item['full_id'], rerun_result.error)
                 elif rerun_result.status == 'pass':

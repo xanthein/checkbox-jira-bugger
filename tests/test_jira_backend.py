@@ -235,3 +235,49 @@ def test_deal_with_failed_rerun_fail_proceeds_to_bug_filing(mock_jira_cls, mock_
         bug_description = call_args.args[1] if len(call_args.args) > 1 else call_args.kwargs.get("bug_description")
         assert "FRESH_LOG_MARKER" in bug_description
         assert "STALE_LOG_MARKER" not in bug_description
+
+
+@patch("checkbox_jira_bugger.jira_backend.rerun_job")
+@patch("checkbox_jira_bugger.jira_backend.Jira")
+def test_deal_with_failed_rerun_unexpected_exception_does_not_abort_loop(mock_jira_cls, mock_rerun_job):
+    api, mock_jira = _make_api(mock_jira_cls)
+    mock_rerun_job.side_effect = TypeError("boom")
+
+    with patch.object(api, "search_bug", return_value=[]) as mock_search_bug, \
+            patch.object(api, "create_newbug") as mock_create_newbug:
+        data = {
+            "results": [
+                {
+                    "id": "audio/playback",
+                    "full_id": "com.canonical.certification::audio/playback",
+                    "status": "fail",
+                    "io_log": "log1",
+                    "certification_status": "blocker",
+                },
+                {
+                    "id": "bluetooth/scan",
+                    "full_id": "com.canonical.certification::bluetooth/scan",
+                    "status": "fail",
+                    "io_log": "log2",
+                    "certification_status": "blocker",
+                },
+            ]
+        }
+        dut_ssh_config = DutSshConfig(
+            user="ubuntu", ssh_key="/key", timeout=30, env={},
+            rerun_job_patterns=["com.canonical.certification::*"],
+        )
+        device_info = DeviceInfo(canonical_label="dev1", ip_address="10.0.0.5")
+
+        # Should not raise, despite rerun_job raising TypeError for both jobs.
+        deal_with_failed_test_cases_common_test(
+            data, api, "submission.tar.xz", "jellyfish-gogogo", "manifest", "1.0", "bios1", "sku1",
+            "sku-name", "a@canonical.com", "tester1",
+            rerun_on_fail=True, device_info=device_info, dut_ssh_config=dut_ssh_config,
+        )
+
+        # Both jobs must have proceeded to normal bug-filing flow using the
+        # original item, proving the exception in job 1's rerun did not
+        # abort processing of job 2 (no blast radius).
+        assert mock_search_bug.call_count == 2
+        assert mock_create_newbug.call_count == 2
