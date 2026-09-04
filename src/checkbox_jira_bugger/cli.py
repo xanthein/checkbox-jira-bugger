@@ -11,8 +11,8 @@ import os
 from checkbox_jira_bugger import checkbox_report
 from checkbox_jira_bugger import config
 from checkbox_jira_bugger import jira_backend
-from checkbox_jira_bugger.c3_client import C3Client, DeviceNotFoundError
-from checkbox_jira_bugger.mattermost import MattermostClient
+from checkbox_jira_bugger.c3_client import C3Client, C3ApiError, DeviceNotFoundError
+from checkbox_jira_bugger.mattermost import MattermostClient, MattermostApiError
 
 BH_DEFAULT_JIRA_SECRET = "~/.checkbox-jira-bugger/secrets/jira_secrets.ini"
 BH_DEFAULT_JIRA_PROJECT_CONF = "~/.checkbox-jira-bugger/jira_project_config/jira_project_config.json"
@@ -63,7 +63,15 @@ def build_arg_parser() -> argparse.ArgumentParser:
 
 
 def prompt_for_cid() -> str:
-    return input("Enter CID (Canonical ID) for this submission's DUT: ").strip()
+    while True:
+        try:
+            cid = input("Enter CID (Canonical ID) for this submission's DUT: ").strip()
+        except EOFError:
+            log.error("No CID provided (EOF); aborting.")
+            raise SystemExit(1)
+        if cid:
+            return cid
+        print("CID cannot be empty, please try again.")
 
 
 def resolve_device_info(c3_config_ini: str, cid: str):
@@ -90,8 +98,13 @@ def run(args):
     if submission_dir is None:
         raise SystemExit(1)
 
-    with open(os.path.join(submission_dir, "submission.json"), "rb") as fobj:
-        data = json.load(fobj)
+    submission_json_path = os.path.join(submission_dir, "submission.json")
+    try:
+        with open(submission_json_path, "rb") as fobj:
+            data = json.load(fobj)
+    except (FileNotFoundError, json.JSONDecodeError) as exc:
+        log.error("Could not read submission.json from %s: %s", submission_dir, exc)
+        raise SystemExit(1)
 
     manifest_name, manifest_version, bios_version, sku_number = (
         checkbox_report.get_manifest_and_device_information(data)
@@ -143,7 +156,14 @@ def main():
         level=logging.DEBUG if args.debugmode else logging.INFO,
     )
 
-    run(args)
+    try:
+        run(args)
+    except (C3ApiError, MattermostApiError) as exc:
+        log.error("Error: %s", exc)
+        raise SystemExit(1)
+    except KeyboardInterrupt:
+        log.error("Interrupted by user")
+        raise SystemExit(130)
 
 
 if __name__ == "__main__":

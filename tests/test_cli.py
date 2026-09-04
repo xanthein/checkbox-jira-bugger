@@ -1,6 +1,6 @@
 import pytest
 from unittest.mock import patch, MagicMock
-from checkbox_jira_bugger.cli import build_arg_parser, run
+from checkbox_jira_bugger.cli import build_arg_parser, run, prompt_for_cid
 from checkbox_jira_bugger.c3_client import DeviceInfo, DeviceNotFoundError
 
 
@@ -70,3 +70,128 @@ def test_run_aborts_if_cid_not_resolvable(mock_c3_client_cls, mock_input, tmp_pa
 
     with pytest.raises(SystemExit):
         run(args)
+
+
+@patch("checkbox_jira_bugger.cli.input", side_effect=["", "  ", "202102-28691"])
+def test_prompt_for_cid_reprompts_on_empty_input(mock_input):
+    assert prompt_for_cid() == "202102-28691"
+    assert mock_input.call_count == 3
+
+
+@patch("checkbox_jira_bugger.cli.input", side_effect=EOFError())
+def test_prompt_for_cid_raises_systemexit_on_eof(mock_input):
+    with pytest.raises(SystemExit):
+        prompt_for_cid()
+
+
+@patch("checkbox_jira_bugger.cli.input", return_value="202102-28691")
+@patch("checkbox_jira_bugger.cli.C3Client")
+@patch("checkbox_jira_bugger.cli.jira_backend")
+@patch("checkbox_jira_bugger.cli.checkbox_report")
+def test_run_raises_systemexit_on_malformed_submission_json(
+    mock_checkbox_report, mock_jira_backend, mock_c3_client_cls, mock_input, tmp_path
+):
+    mock_checkbox_report.extract_submission_tarball.return_value = str(tmp_path)
+
+    (tmp_path / "submission.json").write_text("not valid json")
+
+    mock_client = MagicMock()
+    mock_client.get_device_host.return_value = DeviceInfo(
+        canonical_label="resolved-label", ip_address="10.1.2.3"
+    )
+    mock_c3_client_cls.from_config_file.return_value = mock_client
+
+    parser = build_arg_parser()
+    args = parser.parse_args([
+        "-p", "somerville", "-u", "sku1", "-a", "assignee@example.com",
+        "-m", "FC", "-s", "secrets.ini", "-c", "config.json",
+        "-3", "c3.ini", "-d", "dut.ini", "submission.tar.xz",
+    ])
+
+    with pytest.raises(SystemExit):
+        run(args)
+
+
+@patch("checkbox_jira_bugger.cli.input", return_value="202102-28691")
+@patch("checkbox_jira_bugger.cli.C3Client")
+@patch("checkbox_jira_bugger.cli.config")
+@patch("checkbox_jira_bugger.cli.jira_backend")
+@patch("checkbox_jira_bugger.cli.checkbox_report")
+def test_run_loads_dut_ssh_config_and_passes_rerun_on_fail(
+    mock_checkbox_report, mock_jira_backend, mock_config, mock_c3_client_cls, mock_input, tmp_path
+):
+    mock_checkbox_report.extract_submission_tarball.return_value = str(tmp_path)
+    mock_checkbox_report.get_manifest_and_device_information.return_value = (
+        "manifest", "1.0", "bios1", "sku1"
+    )
+    mock_checkbox_report.get_ubuntu_version.return_value = "24.04"
+
+    (tmp_path / "submission.json").write_text('{"results": []}')
+
+    mock_client = MagicMock()
+    mock_client.get_device_host.return_value = DeviceInfo(
+        canonical_label="resolved-label", ip_address="10.1.2.3"
+    )
+    mock_c3_client_cls.from_config_file.return_value = mock_client
+
+    mock_jira_backend.is_valid_email_address.return_value = True
+
+    parser = build_arg_parser()
+    args = parser.parse_args([
+        "-p", "somerville", "-u", "sku1", "-a", "assignee@example.com",
+        "-m", "FC", "-s", "secrets.ini", "-c", "config.json",
+        "-3", "c3.ini", "-d", "dut.ini", "--rerun-on-fail", "submission.tar.xz",
+    ])
+
+    run(args)
+
+    mock_config.load_dut_ssh_config.assert_called_once_with("dut.ini")
+    called_kwargs = mock_jira_backend.deal_with_failed_test_cases_common_test.call_args[1]
+    assert called_kwargs["rerun_on_fail"] is True
+
+
+@patch("checkbox_jira_bugger.cli.input", return_value="202102-28691")
+@patch("checkbox_jira_bugger.cli.MattermostClient")
+@patch("checkbox_jira_bugger.cli.C3Client")
+@patch("checkbox_jira_bugger.cli.config")
+@patch("checkbox_jira_bugger.cli.jira_backend")
+@patch("checkbox_jira_bugger.cli.checkbox_report")
+def test_run_resolves_username_assignee_via_mattermost(
+    mock_checkbox_report, mock_jira_backend, mock_config, mock_c3_client_cls,
+    mock_mattermost_client_cls, mock_input, tmp_path
+):
+    mock_checkbox_report.extract_submission_tarball.return_value = str(tmp_path)
+    mock_checkbox_report.get_manifest_and_device_information.return_value = (
+        "manifest", "1.0", "bios1", "sku1"
+    )
+    mock_checkbox_report.get_ubuntu_version.return_value = "24.04"
+
+    (tmp_path / "submission.json").write_text('{"results": []}')
+
+    mock_client = MagicMock()
+    mock_client.get_device_host.return_value = DeviceInfo(
+        canonical_label="resolved-label", ip_address="10.1.2.3"
+    )
+    mock_c3_client_cls.from_config_file.return_value = mock_client
+
+    mock_jira_backend.is_valid_email_address.return_value = False
+
+    mock_config.load_jira_secrets.return_value = MagicMock(mt_token="tok123")
+    mock_mm_client = MagicMock()
+    mock_mm_client.mt_get_user_email.return_value = "resolved@example.com"
+    mock_mattermost_client_cls.return_value = mock_mm_client
+
+    parser = build_arg_parser()
+    args = parser.parse_args([
+        "-p", "somerville", "-u", "sku1", "-a", "someusername",
+        "-m", "FC", "-s", "secrets.ini", "-c", "config.json",
+        "-3", "c3.ini", "-d", "dut.ini", "submission.tar.xz",
+    ])
+
+    run(args)
+
+    mock_config.load_jira_secrets.assert_called_once_with("secrets.ini")
+    mock_mattermost_client_cls.assert_called_once_with("tok123")
+    mock_mm_client.mt_get_user_email.assert_called_once_with("someusername")
+    called_args = mock_jira_backend.deal_with_failed_test_cases_common_test.call_args[0]
+    assert "resolved@example.com" in called_args
