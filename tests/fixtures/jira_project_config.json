@@ -1,0 +1,19 @@
+{
+    "OEM_X86_JIRA_CONF": {
+        "somerville": {
+            "jira_project": "CASC",
+            "jira_components": [
+                {
+                    "component_name": "jellyfish-gogogo",
+                    "jira_enable_platform_card": "CASC-1"
+                }
+            ]
+        }
+    },
+    "somerville": {
+        "objectives": {
+            "22.04": "CASC-207"
+        },
+        "hierarchy": ["theme", "objective", "epic", "bug"]
+    }
+}
