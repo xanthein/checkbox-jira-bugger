@@ -4,19 +4,25 @@ OAuth2 client-credentials auth, modeled on transfer_dut/c3_api.py and
 documented in certification_v2_api.yaml.
 """
 import base64
-import configparser
 import logging
 from dataclasses import dataclass
 
 import requests
 
+from checkbox_jira_bugger import config
+
 C3_BASE_URL = "https://certification.canonical.com"
+REQUEST_TIMEOUT = 30
 
 log = logging.getLogger(__name__)
 
 
 class DeviceNotFoundError(Exception):
     """Raised when a CID cannot be resolved to a machine and/or lab resource."""
+
+
+class C3ApiError(Exception):
+    """Raised when a network/HTTP error occurs while talking to the C3 API."""
 
 
 @dataclass(frozen=True)
@@ -32,12 +38,8 @@ class C3Client:
 
     @classmethod
     def from_config_file(cls, c3_config_file: str) -> "C3Client":
-        parser = configparser.ConfigParser()
-        if not parser.read(c3_config_file):
-            raise FileNotFoundError(f"Could not read c3 config file: {c3_config_file}")
-        client_id = parser["c3 secret"]["client_id"]
-        client_secret = parser["c3 secret"]["client_secret"]
-        return cls(client_id=client_id, client_secret=client_secret)
+        c3_config = config.load_c3_config(c3_config_file)
+        return cls(client_id=c3_config.client_id, client_secret=c3_config.client_secret)
 
     def _get_access_token(self, client_id: str, client_secret: str) -> str:
         credential = base64.b64encode(
@@ -48,20 +50,34 @@ class C3Client:
             "Content-Type": "application/x-www-form-urlencoded",
         }
         params = {"grant_type": "client_credentials", "scope": "read write"}
-        response = requests.post(
-            f"{self.base_url}/oauth2/token/", headers=headers, data=params
-        )
-        response.raise_for_status()
+        try:
+            response = requests.post(
+                f"{self.base_url}/oauth2/token/",
+                headers=headers,
+                data=params,
+                timeout=REQUEST_TIMEOUT,
+            )
+            response.raise_for_status()
+        except requests.RequestException as exc:
+            raise C3ApiError(f"Failed to obtain C3 access token: {exc}") from exc
         return response.json()["access_token"]
 
     def c3_get(self, endpoint: str, **params):
         headers = {"Authorization": f"Bearer {self.access_token}"}
         params.setdefault("pagination", "limitoffset")
         params.setdefault("limit", 0)
-        response = requests.get(
-            f"{self.base_url}/api/v2/{endpoint}", headers=headers, params=params
-        )
-        response.raise_for_status()
+        try:
+            response = requests.get(
+                f"{self.base_url}/api/v2/{endpoint}",
+                headers=headers,
+                params=params,
+                timeout=REQUEST_TIMEOUT,
+            )
+            if response.status_code == 404:
+                return None
+            response.raise_for_status()
+        except requests.RequestException as exc:
+            raise C3ApiError(f"C3 API request to {endpoint} failed: {exc}") from exc
         body = response.json()
         return body["results"] if isinstance(body, dict) and "results" in body else body
 
