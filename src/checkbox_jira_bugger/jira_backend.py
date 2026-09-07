@@ -956,7 +956,7 @@ class jira_api:
         '''
         get manifest version from bug description
         '''
-        bug_description = jira_issue_inst['fields']['description']
+        bug_description = description_to_plain_text(jira_issue_inst['fields']['description'])
         if '[Additional Information]' in bug_description:
             adinfo = bug_description.split("[Additional Information]", 1)[1]
         elif '[Additional information]' in bug_description:
@@ -981,7 +981,7 @@ class jira_api:
                Manifest: PLATFORM_TAG VERSION
         Exception format: Manifest: canonical-oem-somerville-focal-amd64-20200502-85+fossa-cubone-rkl+X55
         '''
-        bug_description = jira_issue_inst['fields']['description']
+        bug_description = description_to_plain_text(jira_issue_inst['fields']['description'])
 
         if '[Additional Information]' in bug_description:
             adinfo = bug_description.split("[Additional Information]", 1)[1]
@@ -1005,7 +1005,7 @@ class jira_api:
         format:
                SKU: sku1 sku2 sku3
         '''
-        bug_description = jira_issue_inst['fields']['description']
+        bug_description = description_to_plain_text(jira_issue_inst['fields']['description'])
         if '[Additional Information]' in bug_description:
             adinfo = bug_description.split("[Additional Information]", 1)[1]
         elif '[Additional information]' in bug_description:
@@ -1050,7 +1050,7 @@ class jira_api:
         this method will update bug description directly no interactive
         '''
         bug_description_new = ''
-        bug_description_old = jira_issue_inst['fields']['description']
+        bug_description_old = description_to_plain_text(jira_issue_inst['fields']['description'])
         for item in bug_description_old.split("\n"):
             if "SKU:" in item:
                 if sku_name not in item:
@@ -1231,6 +1231,40 @@ def restrict_log_msg(log_msg):
         return log_msg[:32000] + JIRA_CUT_LOG_MEG
     else:
         return log_msg
+
+
+def _adf_node_text(node):
+    """Recursively extract concatenated text from a single ADF node."""
+    if not isinstance(node, dict):
+        return ""
+    parts = []
+    if node.get("type") == "text":
+        parts.append(node.get("text", "") or "")
+    for child in node.get("content", None) or []:
+        parts.append(_adf_node_text(child))
+    return "".join(parts)
+
+
+def description_to_plain_text(description):
+    """Normalize a Jira issue `description` field to a plain text string.
+
+    Jira Cloud can return `description` either as a plain string (REST API
+    v2 / legacy compatibility mode) or as an Atlassian Document Format (ADF)
+    dict (REST API v3, and observed in practice even with api_version=2
+    pinned for some issues). Every description-parsing method in this file
+    was written against the plain-string format, so this helper converts an
+    ADF dict into an equivalent plain-text string (one line per top-level
+    block, e.g. paragraph), while passing plain strings through unchanged
+    and treating a missing description (None) as an empty string.
+    """
+    if description is None:
+        return ""
+    if isinstance(description, str):
+        return description
+    if isinstance(description, dict):
+        blocks = [_adf_node_text(node) for node in description.get("content", None) or []]
+        return "\n".join(blocks)
+    return str(description)
 
 
 def compose_jira_issue_dict(

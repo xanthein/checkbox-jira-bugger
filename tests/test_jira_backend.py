@@ -20,6 +20,7 @@ from checkbox_jira_bugger.jira_backend import (
     compose_jira_issue_dict,
     deal_with_failed_test_cases_common_test,
     deal_with_passed_test_cases_common_test,
+    description_to_plain_text,
 )
 
 FIXTURES = os.path.join(os.path.dirname(__file__), "fixtures")
@@ -50,6 +51,51 @@ def test_restrict_log_msg_truncates_long_log():
 def test_restrict_log_msg_short_log_unchanged():
     short_log = "hello"
     assert restrict_log_msg(short_log) == short_log
+
+
+def test_description_to_plain_text_passes_through_plain_string():
+    assert description_to_plain_text("SKU: sku1 sku2") == "SKU: sku1 sku2"
+
+
+def test_description_to_plain_text_returns_empty_string_for_none():
+    assert description_to_plain_text(None) == ""
+
+
+def test_description_to_plain_text_converts_adf_dict():
+    """
+    Regression test: Jira Cloud can return `description` as an Atlassian
+    Document Format (ADF) dict instead of a plain string, even with
+    api_version=2 pinned. Every description-parsing method needs this
+    normalized to plain text (one line per paragraph block) so downstream
+    `.split("\\n")`/`in` checks keep working.
+    """
+    adf_description = {
+        "type": "doc",
+        "version": 1,
+        "content": [
+            {
+                "type": "paragraph",
+                "content": [{"type": "text", "text": "[Additional Information]"}],
+            },
+            {
+                "type": "paragraph",
+                "content": [
+                    {"type": "text", "text": "Manifest: "},
+                    {"type": "text", "text": "somerville-jellyfish 20260901-458"},
+                ],
+            },
+            {
+                "type": "paragraph",
+                "content": [{"type": "text", "text": "SKU: sku1 sku2"}],
+            },
+        ],
+    }
+    plain_text = description_to_plain_text(adf_description)
+    assert "[Additional Information]" in plain_text
+    assert "Manifest: somerville-jellyfish 20260901-458" in plain_text
+    assert "SKU: sku1 sku2" in plain_text
+    lines = plain_text.split("\n")
+    assert any("SKU:" in line for line in lines)
 
 
 def test_bh_get_jira_project_key():
@@ -191,6 +237,59 @@ def _make_api(mock_jira_cls):
     )
     mock_jira.jql.reset_mock()
     return api, mock_jira
+
+
+_ADF_DESCRIPTION_WITH_SKU = {
+    "type": "doc",
+    "version": 1,
+    "content": [
+        {
+            "type": "paragraph",
+            "content": [{"type": "text", "text": "[Additional Information]"}],
+        },
+        {
+            "type": "paragraph",
+            "content": [{"type": "text", "text": "SKU: sku1 sku2"}],
+        },
+    ],
+}
+
+
+@patch("checkbox_jira_bugger.jira_backend.Jira")
+def test_get_bug_skus_handles_adf_description(mock_jira_cls):
+    """
+    Regression test: even with api_version=2 pinned, Jira Cloud can still
+    return `description` as an ADF dict for some issues. get_bug_skus must
+    not crash on that -- it should normalize to plain text first.
+    """
+    api, _ = _make_api(mock_jira_cls)
+    jira_issue_inst = {"key": "CASC-1", "fields": {"description": _ADF_DESCRIPTION_WITH_SKU}}
+
+    result = api.get_bug_skus(jira_issue_inst)
+
+    assert result == ["sku1", "sku2"]
+
+
+@patch("checkbox_jira_bugger.jira_backend.Jira")
+def test_append_sku_to_bug_description_handles_adf_description(mock_jira_cls):
+    """
+    Regression test for the exact crash observed in production:
+        AttributeError: 'dict' object has no attribute 'split'
+    append_sku_to_bug_description must normalize an ADF description to
+    plain text before splitting on newlines, instead of crashing.
+    """
+    api, mock_jira = _make_api(mock_jira_cls)
+    jira_issue_inst = {
+        "key": "CASC-1",
+        "fields": {"summary": "some bug", "description": _ADF_DESCRIPTION_WITH_SKU},
+    }
+
+    api.append_sku_to_bug_description(jira_issue_inst, "sku3")
+
+    mock_jira.update_issue_field.assert_called_once()
+    called_key, called_fields = mock_jira.update_issue_field.call_args[0]
+    assert called_key == "CASC-1"
+    assert "SKU: sku1 sku2 sku3" in called_fields["description"]
 
 
 @patch("checkbox_jira_bugger.jira_backend.rerun_job")
