@@ -98,6 +98,37 @@ def test_description_to_plain_text_converts_adf_dict():
     assert any("SKU:" in line for line in lines)
 
 
+def test_description_to_plain_text_converts_hard_break_to_newline():
+    """
+    Regression test confirmed against a real Jira Cloud issue (STELLA-4127):
+    a single ADF paragraph can contain multiple `text` nodes separated by
+    `hardBreak` nodes (Jira's actual rendering of a "\\n" within one
+    paragraph), e.g.:
+        [Summary]... <hardBreak> [I/O log]...
+    The v2 (string) REST API renders each hardBreak as a single "\\n" when
+    it returns description as plain text, so the ADF converter must match
+    that behavior -- previously hardBreak nodes were silently dropped
+    (contributing no separator at all), incorrectly merging two lines into
+    one with zero space between them.
+    """
+    adf_description = {
+        "type": "doc",
+        "version": 1,
+        "content": [
+            {
+                "type": "paragraph",
+                "content": [
+                    {"type": "text", "text": "[Summary]usb/storage-detect failed"},
+                    {"type": "hardBreak"},
+                    {"type": "text", "text": "[I/O log]nothing found"},
+                ],
+            }
+        ],
+    }
+    plain_text = description_to_plain_text(adf_description)
+    assert plain_text == "[Summary]usb/storage-detect failed\n[I/O log]nothing found"
+
+
 def test_bh_get_jira_project_key():
     conf = _load_jira_config()
     assert bh_get_jira_project_key(conf, "somerville") == "CASC"
@@ -290,6 +321,33 @@ def test_append_sku_to_bug_description_handles_adf_description(mock_jira_cls):
     called_key, called_fields = mock_jira.update_issue_field.call_args[0]
     assert called_key == "CASC-1"
     assert "SKU: sku1 sku2 sku3" in called_fields["description"]
+
+
+@patch("checkbox_jira_bugger.jira_backend.Jira")
+def test_append_sku_to_bug_description_rejoins_lines_with_blank_line(mock_jira_cls):
+    """
+    Regression test confirmed against a real Jira Cloud issue (STELLA-4127):
+    when the rewritten description is submitted back to Jira as a plain
+    string, a single "\\n" between lines gets silently dropped (merging
+    lines together with zero separator) -- only a blank line ("\\n\\n")
+    survives as a real line break. append_sku_to_bug_description must
+    rejoin lines with a blank line, not a single "\\n", so the updated
+    description remains parseable after Jira stores it.
+    """
+    api, mock_jira = _make_api(mock_jira_cls)
+    jira_issue_inst = {
+        "key": "CASC-1",
+        "fields": {
+            "summary": "some bug",
+            "description": "[Additional Information]\nSKU: sku1 sku2\nBIOS ID: ABC123",
+        },
+    }
+
+    api.append_sku_to_bug_description(jira_issue_inst, "sku3")
+
+    called_key, called_fields = mock_jira.update_issue_field.call_args[0]
+    new_description = called_fields["description"]
+    assert "[Additional Information]\n\nSKU: sku1 sku2 sku3\n\nBIOS ID: ABC123" in new_description
 
 
 @patch("checkbox_jira_bugger.jira_backend.rerun_job")

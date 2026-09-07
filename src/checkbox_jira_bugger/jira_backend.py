@@ -1059,7 +1059,15 @@ class jira_api:
                 else:
                     logging.info('sku: %s already exist' % sku_name)
                     return
-            bug_description_new += item + "\n"
+            # NOTE: join with a BLANK line ("\n\n"), not a single "\n".
+            # Confirmed against a real Jira Cloud issue (STELLA-4127): Jira's
+            # storage layer silently drops a single "\n" line break with zero
+            # separator, merging adjacent lines together. Only a blank line
+            # survives (as a real line break, read back as a single "\n" via
+            # the v2/string API), so every line must be double-newline
+            # separated here to remain individually parseable after Jira
+            # stores this update.
+            bug_description_new += item + "\n\n"
 
         logging.debug('bug id: %s' % jira_issue_inst['key'])
         logging.debug('bug title:')
@@ -1234,9 +1242,18 @@ def restrict_log_msg(log_msg):
 
 
 def _adf_node_text(node):
-    """Recursively extract concatenated text from a single ADF node."""
+    """Recursively extract concatenated text from a single ADF node.
+
+    `hardBreak` nodes (a "\n" embedded within a single paragraph) render
+    as a single "\n" in Jira's own v2/string representation of the same
+    content -- confirmed against a real issue (STELLA-4127) where a
+    paragraph contains multiple `text` nodes separated by `hardBreak`
+    nodes -- so they must be converted to "\n" here too, not dropped.
+    """
     if not isinstance(node, dict):
         return ""
+    if node.get("type") == "hardBreak":
+        return "\n"
     parts = []
     if node.get("type") == "text":
         parts.append(node.get("text", "") or "")

@@ -39,25 +39,43 @@ tag_mapping_table = {
 
 BUG_TITLE_TEMPLATE = '''[Sanity] {test_id} failed'''
 
+# NOTE: every meaningful line below is separated by a BLANK line (double
+# newline), not a single "\n". This is required, not cosmetic: confirmed
+# against a real Jira Cloud issue (STELLA-4127), Jira's storage layer
+# silently drops a single "\n" line break with zero separator (not even a
+# space), merging adjacent lines together -- only a blank line survives,
+# converted to a real line break (rendered back as a single "\n" when read
+# via the v2/string API). Without the blank lines, fields like "SKU:" and
+# "BIOS ID:" get jammed onto one unparseable line once Jira stores the bug.
 BUG_DESCRIPTION_TEMPLATE = '''
 [Summary]
+
 {test_id} failed
+
 certification_status: {certification_status}
 
 [I/O log]
+
 {test_iolog}
 
 [Reproduce Steps]
+
 1. sudo checkbox-cli run {test_full_id}
 
 [Results]
+
 failed
 
 [Additional Information]
+
 Manifest: {manifest_name} {manifest_version}
+
 BIOS Version: {bios_version}
+
 SKU: {sku_name}
+
 BIOS ID: {sku_number}
+
 Tester: {tester}
 '''
 
