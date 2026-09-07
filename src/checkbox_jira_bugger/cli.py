@@ -1,7 +1,8 @@
 """Argparse entry point for checkbox-jira-bugger.
 
 Replaces bin/bughamsterjira.py. Drops -t/--tag: the platform tag is now
-always resolved from an interactively-entered CID via the C3 API.
+always resolved from a CID via the C3 API. The CID is supplied via the
+required --cid flag (not an interactive prompt).
 """
 import argparse
 import json
@@ -50,6 +51,10 @@ def build_arg_parser() -> argparse.ArgumentParser:
                          help="platform label")
     parser.add_argument("-u", "--sku", dest="device_sku", action="store",
                          required=True, help="sku name")
+    parser.add_argument("--cid", dest="cid", action="store",
+                         required=True,
+                         help="Canonical ID (CID) of this submission's DUT, "
+                              "resolved via the C3 API to a platform tag and IP")
     parser.add_argument("-a", "--assignee", dest="assignee", action="store",
                          required=True, help="assign bug to someone (mattermost username or email address)")
     parser.add_argument("-i", dest="interactive", action="store_true", help="interactive mode")
@@ -60,18 +65,6 @@ def build_arg_parser() -> argparse.ArgumentParser:
                          help="rerun failed jobs on the DUT before filing a bug (opt-in)")
     parser.add_argument(dest="submission_tarball", help="the submission tarball")
     return parser
-
-
-def prompt_for_cid() -> str:
-    while True:
-        try:
-            cid = input("Enter CID (Canonical ID) for this submission's DUT: ").strip()
-        except EOFError:
-            log.error("No CID provided (EOF); aborting.")
-            raise SystemExit(1)
-        if cid:
-            return cid
-        print("CID cannot be empty, please try again.")
 
 
 def resolve_device_info(c3_config_ini: str, cid: str):
@@ -91,7 +84,9 @@ def run(args):
     if args.milestone not in ["FC", "GM"]:
         raise SystemExit(f"Invalid milestone: {args.milestone}, must be one of FC or GM")
 
-    cid = prompt_for_cid()
+    cid = args.cid.strip()
+    if not cid:
+        raise SystemExit("--cid must not be empty")
     device_info = resolve_device_info(args.c3_config_ini, cid)
 
     submission_dir = checkbox_report.extract_submission_tarball(args.submission_tarball)

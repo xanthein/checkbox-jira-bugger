@@ -1,7 +1,10 @@
 import pytest
 from unittest.mock import patch, MagicMock
-from checkbox_jira_bugger.cli import build_arg_parser, run, prompt_for_cid
+from checkbox_jira_bugger.cli import build_arg_parser, run
 from checkbox_jira_bugger.c3_client import DeviceInfo, DeviceNotFoundError
+
+
+CID_ARGS = ["--cid", "202102-28691"]
 
 
 def test_arg_parser_has_no_tag_flag():
@@ -9,6 +12,7 @@ def test_arg_parser_has_no_tag_flag():
     help_text = parser.format_help()
     assert "--tag" not in help_text
     assert "--rerun-on-fail" in help_text
+    assert "--cid" in help_text
 
 
 def test_arg_parser_requires_project_sku_assignee_milestone():
@@ -17,12 +21,20 @@ def test_arg_parser_requires_project_sku_assignee_milestone():
         parser.parse_args(["submission.tar.xz"])  # missing required args
 
 
-@patch("checkbox_jira_bugger.cli.input", return_value="202102-28691")
+def test_arg_parser_requires_cid():
+    parser = build_arg_parser()
+    with pytest.raises(SystemExit):
+        parser.parse_args([
+            "-p", "somerville", "-u", "sku1", "-a", "assignee@example.com",
+            "-m", "FC", "submission.tar.xz",
+        ])  # missing --cid
+
+
 @patch("checkbox_jira_bugger.cli.C3Client")
 @patch("checkbox_jira_bugger.cli.jira_backend")
 @patch("checkbox_jira_bugger.cli.checkbox_report")
-def test_run_prompts_for_cid_and_resolves_device_info(
-    mock_checkbox_report, mock_jira_backend, mock_c3_client_cls, mock_input, tmp_path
+def test_run_resolves_device_info_from_cid_flag(
+    mock_checkbox_report, mock_jira_backend, mock_c3_client_cls, tmp_path
 ):
     mock_checkbox_report.extract_submission_tarball.return_value = str(tmp_path)
     mock_checkbox_report.get_manifest_and_device_information.return_value = (
@@ -42,21 +54,19 @@ def test_run_prompts_for_cid_and_resolves_device_info(
     args = parser.parse_args([
         "-p", "somerville", "-u", "sku1", "-a", "assignee@example.com",
         "-m", "FC", "-s", "secrets.ini", "-c", "config.json",
-        "-3", "c3.ini", "-d", "dut.ini", "submission.tar.xz",
+        "-3", "c3.ini", "-d", "dut.ini", *CID_ARGS, "submission.tar.xz",
     ])
 
     run(args)
 
-    mock_input.assert_called_once()
     mock_client.get_device_host.assert_called_once_with("202102-28691")
     # canonical_label must be used as the platform tag passed into jira_backend
     called_args = mock_jira_backend.jira_api.call_args[0]
     assert "resolved-label" in called_args
 
 
-@patch("checkbox_jira_bugger.cli.input", return_value="bad-cid")
 @patch("checkbox_jira_bugger.cli.C3Client")
-def test_run_aborts_if_cid_not_resolvable(mock_c3_client_cls, mock_input, tmp_path, capsys):
+def test_run_aborts_if_cid_not_resolvable(mock_c3_client_cls, tmp_path, capsys):
     mock_client = MagicMock()
     mock_client.get_device_host.side_effect = DeviceNotFoundError("no such CID")
     mock_c3_client_cls.from_config_file.return_value = mock_client
@@ -65,31 +75,30 @@ def test_run_aborts_if_cid_not_resolvable(mock_c3_client_cls, mock_input, tmp_pa
     args = parser.parse_args([
         "-p", "somerville", "-u", "sku1", "-a", "assignee@example.com",
         "-m", "FC", "-s", "secrets.ini", "-c", "config.json",
-        "-3", "c3.ini", "-d", "dut.ini", "submission.tar.xz",
+        "-3", "c3.ini", "-d", "dut.ini", "--cid", "bad-cid", "submission.tar.xz",
     ])
 
     with pytest.raises(SystemExit):
         run(args)
 
 
-@patch("checkbox_jira_bugger.cli.input", side_effect=["", "  ", "202102-28691"])
-def test_prompt_for_cid_reprompts_on_empty_input(mock_input):
-    assert prompt_for_cid() == "202102-28691"
-    assert mock_input.call_count == 3
+def test_run_aborts_on_empty_cid(tmp_path):
+    parser = build_arg_parser()
+    args = parser.parse_args([
+        "-p", "somerville", "-u", "sku1", "-a", "assignee@example.com",
+        "-m", "FC", "-s", "secrets.ini", "-c", "config.json",
+        "-3", "c3.ini", "-d", "dut.ini", "--cid", "   ", "submission.tar.xz",
+    ])
 
-
-@patch("checkbox_jira_bugger.cli.input", side_effect=EOFError())
-def test_prompt_for_cid_raises_systemexit_on_eof(mock_input):
     with pytest.raises(SystemExit):
-        prompt_for_cid()
+        run(args)
 
 
-@patch("checkbox_jira_bugger.cli.input", return_value="202102-28691")
 @patch("checkbox_jira_bugger.cli.C3Client")
 @patch("checkbox_jira_bugger.cli.jira_backend")
 @patch("checkbox_jira_bugger.cli.checkbox_report")
 def test_run_raises_systemexit_on_malformed_submission_json(
-    mock_checkbox_report, mock_jira_backend, mock_c3_client_cls, mock_input, tmp_path
+    mock_checkbox_report, mock_jira_backend, mock_c3_client_cls, tmp_path
 ):
     mock_checkbox_report.extract_submission_tarball.return_value = str(tmp_path)
 
@@ -105,20 +114,19 @@ def test_run_raises_systemexit_on_malformed_submission_json(
     args = parser.parse_args([
         "-p", "somerville", "-u", "sku1", "-a", "assignee@example.com",
         "-m", "FC", "-s", "secrets.ini", "-c", "config.json",
-        "-3", "c3.ini", "-d", "dut.ini", "submission.tar.xz",
+        "-3", "c3.ini", "-d", "dut.ini", *CID_ARGS, "submission.tar.xz",
     ])
 
     with pytest.raises(SystemExit):
         run(args)
 
 
-@patch("checkbox_jira_bugger.cli.input", return_value="202102-28691")
 @patch("checkbox_jira_bugger.cli.C3Client")
 @patch("checkbox_jira_bugger.cli.config")
 @patch("checkbox_jira_bugger.cli.jira_backend")
 @patch("checkbox_jira_bugger.cli.checkbox_report")
 def test_run_loads_dut_ssh_config_and_passes_rerun_on_fail(
-    mock_checkbox_report, mock_jira_backend, mock_config, mock_c3_client_cls, mock_input, tmp_path
+    mock_checkbox_report, mock_jira_backend, mock_config, mock_c3_client_cls, tmp_path
 ):
     mock_checkbox_report.extract_submission_tarball.return_value = str(tmp_path)
     mock_checkbox_report.get_manifest_and_device_information.return_value = (
@@ -140,7 +148,7 @@ def test_run_loads_dut_ssh_config_and_passes_rerun_on_fail(
     args = parser.parse_args([
         "-p", "somerville", "-u", "sku1", "-a", "assignee@example.com",
         "-m", "FC", "-s", "secrets.ini", "-c", "config.json",
-        "-3", "c3.ini", "-d", "dut.ini", "--rerun-on-fail", "submission.tar.xz",
+        "-3", "c3.ini", "-d", "dut.ini", *CID_ARGS, "--rerun-on-fail", "submission.tar.xz",
     ])
 
     run(args)
@@ -150,7 +158,6 @@ def test_run_loads_dut_ssh_config_and_passes_rerun_on_fail(
     assert called_kwargs["rerun_on_fail"] is True
 
 
-@patch("checkbox_jira_bugger.cli.input", return_value="202102-28691")
 @patch("checkbox_jira_bugger.cli.MattermostClient")
 @patch("checkbox_jira_bugger.cli.C3Client")
 @patch("checkbox_jira_bugger.cli.config")
@@ -158,7 +165,7 @@ def test_run_loads_dut_ssh_config_and_passes_rerun_on_fail(
 @patch("checkbox_jira_bugger.cli.checkbox_report")
 def test_run_resolves_username_assignee_via_mattermost(
     mock_checkbox_report, mock_jira_backend, mock_config, mock_c3_client_cls,
-    mock_mattermost_client_cls, mock_input, tmp_path
+    mock_mattermost_client_cls, tmp_path
 ):
     mock_checkbox_report.extract_submission_tarball.return_value = str(tmp_path)
     mock_checkbox_report.get_manifest_and_device_information.return_value = (
@@ -185,7 +192,7 @@ def test_run_resolves_username_assignee_via_mattermost(
     args = parser.parse_args([
         "-p", "somerville", "-u", "sku1", "-a", "someusername",
         "-m", "FC", "-s", "secrets.ini", "-c", "config.json",
-        "-3", "c3.ini", "-d", "dut.ini", "submission.tar.xz",
+        "-3", "c3.ini", "-d", "dut.ini", *CID_ARGS, "submission.tar.xz",
     ])
 
     run(args)

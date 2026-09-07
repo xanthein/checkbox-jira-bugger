@@ -118,11 +118,12 @@ the test suite, and
 
 ```bash
 checkbox-jira-bugger -p <project> -u <sku> -a <assignee> -m <FC|GM> \
-  [--rerun-on-fail] submission.tar.xz
+  --cid <cid> [--rerun-on-fail] submission.tar.xz
 ```
 
-You will be prompted interactively for the DUT's CID (Canonical ID); the
-tool resolves the platform tag (`canonical_label`) and DUT IP via the C3 API.
+`--cid` (Canonical ID of this submission's DUT) is required. It is resolved
+via the C3 API to a platform tag (`canonical_label`, used wherever the old
+`-t/--tag` flag was used) and the DUT's current IP (used by `--rerun-on-fail`).
 
 ## Development
 
