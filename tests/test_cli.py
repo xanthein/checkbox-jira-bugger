@@ -5,6 +5,11 @@ from checkbox_jira_bugger.c3_client import DeviceInfo, DeviceNotFoundError
 
 
 CID_ARGS = ["--cid", "202102-28691"]
+COMMON_ARGS = [
+    "-p", "somerville", "-l", "jellyfish-zygarde", "-a", "assignee@example.com",
+    "-m", "FC", "-s", "secrets.ini", "-c", "config.json",
+    "-3", "c3.ini", "-d", "dut.ini",
+]
 
 
 def test_arg_parser_has_no_tag_flag():
@@ -15,7 +20,14 @@ def test_arg_parser_has_no_tag_flag():
     assert "--cid" in help_text
 
 
-def test_arg_parser_requires_project_sku_assignee_milestone():
+def test_arg_parser_has_no_sku_flag():
+    parser = build_arg_parser()
+    help_text = parser.format_help()
+    assert "--sku" not in help_text
+    assert "-u SKU" not in help_text
+
+
+def test_arg_parser_requires_project_label_assignee_milestone():
     parser = build_arg_parser()
     with pytest.raises(SystemExit):
         parser.parse_args(["submission.tar.xz"])  # missing required args
@@ -25,9 +37,18 @@ def test_arg_parser_requires_cid():
     parser = build_arg_parser()
     with pytest.raises(SystemExit):
         parser.parse_args([
-            "-p", "somerville", "-u", "sku1", "-a", "assignee@example.com",
+            "-p", "somerville", "-l", "jellyfish-zygarde", "-a", "assignee@example.com",
             "-m", "FC", "submission.tar.xz",
         ])  # missing --cid
+
+
+def test_arg_parser_requires_label():
+    parser = build_arg_parser()
+    with pytest.raises(SystemExit):
+        parser.parse_args([
+            "-p", "somerville", "-a", "assignee@example.com",
+            "-m", "FC", *CID_ARGS, "submission.tar.xz",
+        ])  # missing -l/--label
 
 
 @patch("checkbox_jira_bugger.cli.C3Client")
@@ -51,18 +72,23 @@ def test_run_resolves_device_info_from_cid_flag(
     mock_c3_client_cls.from_config_file.return_value = mock_client
 
     parser = build_arg_parser()
-    args = parser.parse_args([
-        "-p", "somerville", "-u", "sku1", "-a", "assignee@example.com",
-        "-m", "FC", "-s", "secrets.ini", "-c", "config.json",
-        "-3", "c3.ini", "-d", "dut.ini", *CID_ARGS, "submission.tar.xz",
-    ])
+    args = parser.parse_args([*COMMON_ARGS, *CID_ARGS, "submission.tar.xz"])
 
     run(args)
 
     mock_client.get_device_host.assert_called_once_with("202102-28691")
-    # canonical_label must be used as the platform tag passed into jira_backend
+    # the user-supplied -l/--label value must be used as the platform tag
+    # passed into jira_backend.jira_api
     called_args = mock_jira_backend.jira_api.call_args[0]
-    assert "resolved-label" in called_args
+    assert "jellyfish-zygarde" in called_args
+    assert "resolved-label" not in called_args
+
+    # the C3-resolved canonical_label must be used as the device_sku
+    # (sku_name) argument passed into the failed/passed test-case walkers
+    failed_call_args = mock_jira_backend.deal_with_failed_test_cases_common_test.call_args[0]
+    assert "resolved-label" in failed_call_args
+    passed_call_args = mock_jira_backend.deal_with_passed_test_cases_common_test.call_args[0]
+    assert "resolved-label" in passed_call_args
 
 
 @patch("checkbox_jira_bugger.cli.C3Client")
@@ -72,11 +98,7 @@ def test_run_aborts_if_cid_not_resolvable(mock_c3_client_cls, tmp_path, capsys):
     mock_c3_client_cls.from_config_file.return_value = mock_client
 
     parser = build_arg_parser()
-    args = parser.parse_args([
-        "-p", "somerville", "-u", "sku1", "-a", "assignee@example.com",
-        "-m", "FC", "-s", "secrets.ini", "-c", "config.json",
-        "-3", "c3.ini", "-d", "dut.ini", "--cid", "bad-cid", "submission.tar.xz",
-    ])
+    args = parser.parse_args([*COMMON_ARGS, "--cid", "bad-cid", "submission.tar.xz"])
 
     with pytest.raises(SystemExit):
         run(args)
@@ -84,11 +106,7 @@ def test_run_aborts_if_cid_not_resolvable(mock_c3_client_cls, tmp_path, capsys):
 
 def test_run_aborts_on_empty_cid(tmp_path):
     parser = build_arg_parser()
-    args = parser.parse_args([
-        "-p", "somerville", "-u", "sku1", "-a", "assignee@example.com",
-        "-m", "FC", "-s", "secrets.ini", "-c", "config.json",
-        "-3", "c3.ini", "-d", "dut.ini", "--cid", "   ", "submission.tar.xz",
-    ])
+    args = parser.parse_args([*COMMON_ARGS, "--cid", "   ", "submission.tar.xz"])
 
     with pytest.raises(SystemExit):
         run(args)
@@ -111,11 +129,7 @@ def test_run_raises_systemexit_on_malformed_submission_json(
     mock_c3_client_cls.from_config_file.return_value = mock_client
 
     parser = build_arg_parser()
-    args = parser.parse_args([
-        "-p", "somerville", "-u", "sku1", "-a", "assignee@example.com",
-        "-m", "FC", "-s", "secrets.ini", "-c", "config.json",
-        "-3", "c3.ini", "-d", "dut.ini", *CID_ARGS, "submission.tar.xz",
-    ])
+    args = parser.parse_args([*COMMON_ARGS, *CID_ARGS, "submission.tar.xz"])
 
     with pytest.raises(SystemExit):
         run(args)
@@ -145,11 +159,7 @@ def test_run_loads_dut_ssh_config_and_passes_rerun_on_fail(
     mock_jira_backend.is_valid_email_address.return_value = True
 
     parser = build_arg_parser()
-    args = parser.parse_args([
-        "-p", "somerville", "-u", "sku1", "-a", "assignee@example.com",
-        "-m", "FC", "-s", "secrets.ini", "-c", "config.json",
-        "-3", "c3.ini", "-d", "dut.ini", *CID_ARGS, "--rerun-on-fail", "submission.tar.xz",
-    ])
+    args = parser.parse_args([*COMMON_ARGS, *CID_ARGS, "--rerun-on-fail", "submission.tar.xz"])
 
     run(args)
 
@@ -190,7 +200,7 @@ def test_run_resolves_username_assignee_via_mattermost(
 
     parser = build_arg_parser()
     args = parser.parse_args([
-        "-p", "somerville", "-u", "sku1", "-a", "someusername",
+        "-p", "somerville", "-l", "jellyfish-zygarde", "-a", "someusername",
         "-m", "FC", "-s", "secrets.ini", "-c", "config.json",
         "-3", "c3.ini", "-d", "dut.ini", *CID_ARGS, "submission.tar.xz",
     ])

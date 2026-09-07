@@ -117,13 +117,15 @@ the test suite, and
 ## Usage
 
 ```bash
-checkbox-jira-bugger -p <project> -u <sku> -a <assignee> -m <FC|GM> \
+checkbox-jira-bugger -p <project> -l <platform-label> -a <assignee> -m <FC|GM> \
   --cid <cid> [--rerun-on-fail] submission.tar.xz
 ```
 
 `--cid` (Canonical ID of this submission's DUT) is required. It is resolved
-via the C3 API to a platform tag (`canonical_label`, used wherever the old
-`-t/--tag` flag was used) and the DUT's current IP (used by `--rerun-on-fail`).
+via the C3 API to a device SKU (`canonical_label`, used wherever the old
+`-u/--sku` flag was used) and the DUT's current IP (used by
+`--rerun-on-fail`). `-l/--label` is required and is used as the Jira
+platform tag (used wherever the old `-t/--tag` flag was used).
 
 ## Development
 

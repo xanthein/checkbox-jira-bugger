@@ -1,8 +1,15 @@
 """Argparse entry point for checkbox-jira-bugger.
 
-Replaces bin/bughamsterjira.py. Drops -t/--tag: the platform tag is now
-always resolved from a CID via the C3 API. The CID is supplied via the
-required --cid flag (not an interactive prompt).
+Replaces bin/bughamsterjira.py.
+
+- Drops -u/--sku: the device SKU is now always resolved from the required
+  --cid flag via the C3 API (DeviceInfo.canonical_label), not read from the
+  user.
+- -l/--label (platform_label) is now required and is used as the Jira
+  platform tag (previously this role was filled by the C3-resolved
+  canonical_label; -l/--label was a separate, optional secondary label).
+- The CID is supplied via the required --cid flag (not an interactive
+  prompt).
 """
 import argparse
 import json
@@ -27,8 +34,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="A tool to file failed checkbox test cases on Jira, "
                      "with optional rerun-before-filing on the DUT.",
-        epilog="e.g. checkbox-jira-bugger -p somerville -u HVR-SPR-DVT2-L10-C1_202211-30883 "
-               "-a cyrus.lien@canonical.com -m FC submission.tar.xz",
+        epilog="e.g. checkbox-jira-bugger -p somerville -l jellyfish-zygarde "
+               "--cid 202102-28691 -a cyrus.lien@canonical.com -m FC submission.tar.xz",
     )
     parser.add_argument("--debug", dest="debugmode", action="store_true", help="debug mode")
     parser.add_argument("-s", "--secret", dest="jira_secrets_ini", action="store",
@@ -48,13 +55,11 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("-m", "--milestone", dest="milestone", action="store",
                          required=True, help="Milestone (FC, GM)")
     parser.add_argument("-l", "--label", dest="platform_label", action="store",
-                         help="platform label")
-    parser.add_argument("-u", "--sku", dest="device_sku", action="store",
-                         required=True, help="sku name")
+                         required=True, help="platform tag/label (used as the Jira platform tag)")
     parser.add_argument("--cid", dest="cid", action="store",
                          required=True,
                          help="Canonical ID (CID) of this submission's DUT, "
-                              "resolved via the C3 API to a platform tag and IP")
+                              "resolved via the C3 API to a device SKU (canonical_label) and IP")
     parser.add_argument("-a", "--assignee", dest="assignee", action="store",
                          required=True, help="assign bug to someone (mattermost username or email address)")
     parser.add_argument("-i", dest="interactive", action="store_true", help="interactive mode")
@@ -74,7 +79,7 @@ def resolve_device_info(c3_config_ini: str, cid: str):
     except DeviceNotFoundError as exc:
         log.error("Could not resolve CID %s via C3: %s", cid, exc)
         raise SystemExit(1)
-    log.info("Resolved CID %s -> canonical_label=%s, ip=%s",
+    log.info("Resolved CID %s -> canonical_label(device_sku)=%s, ip=%s",
               cid, device_info.canonical_label, device_info.ip_address)
     return device_info
 
@@ -108,7 +113,7 @@ def run(args):
 
     bugmgr = jira_backend.jira_api(
         args.jira_secrets_ini, args.jira_config, args.project,
-        device_info.canonical_label, args.platform_label, ubuntu_version,
+        args.platform_label, None, ubuntu_version,
         args.interactive, args.dryrun, args.milestone,
     )
 
@@ -126,14 +131,14 @@ def run(args):
         dut_ssh_config = config.load_dut_ssh_config(args.dut_ssh_config_ini)
 
     jira_backend.deal_with_failed_test_cases_common_test(
-        data, bugmgr, args.submission_tarball, device_info.canonical_label,
+        data, bugmgr, args.submission_tarball, args.platform_label,
         manifest_name, manifest_version, bios_version, sku_number,
-        args.device_sku, target_assignee, args.tester,
+        device_info.canonical_label, target_assignee, args.tester,
         rerun_on_fail=args.rerun_on_fail, device_info=device_info, dut_ssh_config=dut_ssh_config,
     )
     jira_backend.deal_with_passed_test_cases_common_test(
-        data, bugmgr, args.submission_tarball, device_info.canonical_label,
-        manifest_name, manifest_version, bios_version, sku_number, args.device_sku,
+        data, bugmgr, args.submission_tarball, args.platform_label,
+        manifest_name, manifest_version, bios_version, sku_number, device_info.canonical_label,
     )
 
     checkbox_report.clean_up(submission_dir)
