@@ -109,6 +109,39 @@ def _make_jira_issue_query_response(issues):
 
 
 @patch("checkbox_jira_bugger.jira_backend.Jira")
+def test_jira_api_pins_rest_api_v2_for_plain_text_descriptions(mock_jira_cls):
+    """
+    Regression test: without pinning api_version=2, atlassian-python-api's
+    default ("latest") resolves to the Jira Cloud v3 REST API on this site,
+    which returns rich-text fields like `description` as an ADF dict instead
+    of a plain string. Every description-parsing method in this file
+    (get_bug_manifest_version, get_bug_manifest_name, get_bug_skus,
+    append_sku_to_bug_description) assumes a plain string and calls
+    .split("\\n") on it, so an ADF dict causes:
+        AttributeError: 'dict' object has no attribute 'split'
+    Pinning api_version=2 restores the plain-text (wiki markup) description
+    format these methods require.
+    """
+    mock_jira = MagicMock()
+    mock_jira_cls.return_value = mock_jira
+    mock_jira.issue_exists.return_value = True
+    mock_jira.get_project_components.return_value = [
+        {"id": "10", "name": "jellyfish-gogogo", "description": "desc"}
+    ]
+    mock_jira.jql.return_value = _make_jira_issue_query_response(
+        [{"key": "CASC-99", "fields": {"summary": "child"}}]
+    )
+
+    jira_api(
+        JIRA_SECRETS_INI, JIRA_CONFIG_JSON, "somerville", "jellyfish-gogogo", "22.04-label",
+        "22.04", False, True, "FC",
+    )
+
+    _, kwargs = mock_jira_cls.call_args
+    assert kwargs.get("api_version") == 2
+
+
+@patch("checkbox_jira_bugger.jira_backend.Jira")
 def test_jira_api_search_bug_calls_jql_and_filters_by_summary(mock_jira_cls):
     mock_jira = MagicMock()
     mock_jira_cls.return_value = mock_jira

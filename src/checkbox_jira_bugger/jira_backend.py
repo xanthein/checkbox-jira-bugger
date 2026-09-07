@@ -321,8 +321,15 @@ class jira_api:
         self.dryrun = dryrun
         self.milestone = milestone
         self.email, self.apitoken = bh_get_jira_account_info(jira_secrets_ini)
+        # Pin api_version=2: without this, atlassian-python-api's default
+        # ("latest") resolves to the Jira Cloud v3 REST API, which returns
+        # rich-text fields like `description` as an ADF dict instead of the
+        # plain string every description-parsing method below expects
+        # (get_bug_manifest_version, get_bug_manifest_name, get_bug_skus,
+        # append_sku_to_bug_description all call .split("\n") on it).
         self.jira = Jira(url="https://warthogs.atlassian.net/",
-                         username=self.email, password=self.apitoken, cloud=True)
+                         username=self.email, password=self.apitoken, cloud=True,
+                         api_version=2)
         self.jira_config_json = bh_read_jira_config_file(jira_config_file)
         self.jira_project_key = bh_get_jira_project_key(self.jira_config_json, canonical_project_name)
         # self.bug_parent_issue_type = bh_get_bug_parent_issue_type(self.jira_config_json, self.projectname)
