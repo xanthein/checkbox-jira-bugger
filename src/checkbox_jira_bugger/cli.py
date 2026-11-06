@@ -86,8 +86,6 @@ def resolve_device_info(c3_config_ini: str, cid: str):
 
 def run(args):
     args.milestone = args.milestone.upper()
-    if args.milestone not in ["FC", "GM"]:
-        raise SystemExit(f"Invalid milestone: {args.milestone}, must be one of FC or GM")
 
     cid = args.cid.strip()
     if not cid:

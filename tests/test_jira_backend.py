@@ -206,7 +206,7 @@ def test_jira_api_pins_rest_api_v2_for_plain_text_descriptions(mock_jira_cls):
         {"id": "10", "name": "jellyfish-gogogo", "description": "desc"}
     ]
     mock_jira.jql.return_value = _make_jira_issue_query_response(
-        [{"key": "CASC-99", "fields": {"summary": "child"}}]
+        [{"key": "CASC-99", "fields": {"summary": "Platform Execution Needs to be Fixed Bugs for FC Image Release"}}]
     )
 
     jira_api(
@@ -229,7 +229,7 @@ def test_jira_api_search_bug_calls_jql_and_filters_by_summary(mock_jira_cls):
 
     # BFS in __init__ calls jql for each hierarchy child; return one matching issue per call.
     def jql_side_effect(jql_query):
-        return _make_jira_issue_query_response([{"key": "CASC-99", "fields": {"summary": "child"}}])
+        return _make_jira_issue_query_response([{"key": "CASC-99", "fields": {"summary": "Platform Execution Needs to be Fixed Bugs for FC Image Release"}}])
 
     mock_jira.jql.side_effect = jql_side_effect
 
@@ -260,7 +260,7 @@ def _make_api(mock_jira_cls):
         {"id": "10", "name": "jellyfish-gogogo", "description": "desc"}
     ]
     mock_jira.jql.return_value = _make_jira_issue_query_response(
-        [{"key": "CASC-99", "fields": {"summary": "child"}}]
+        [{"key": "CASC-99", "fields": {"summary": "Platform Execution Needs to be Fixed Bugs for FC Image Release"}}]
     )
     api = jira_api(
         JIRA_SECRETS_INI, JIRA_CONFIG_JSON, "somerville", "jellyfish-gogogo", "22.04-label",
@@ -471,3 +471,51 @@ def test_deal_with_failed_rerun_unexpected_exception_does_not_abort_loop(mock_ji
         # abort processing of job 2 (no blast radius).
         assert mock_search_bug.call_count == 2
         assert mock_create_newbug.call_count == 2
+
+
+def _child(key, summary):
+    return {"key": key, "fields": {"summary": "HP Platform " + summary}}
+
+
+def _resolve_with(mock_jira_cls, milestone, execution, epic):
+    api, _ = _make_api(mock_jira_cls)
+    api.milestone = milestone
+    api.platform_initial_bug_key = "X-1"
+    epic_summary = "Needs to be Fixed Bugs for %s Image Release" % milestone
+
+    def lookup(parent, summary=None):
+        if parent == "X-1":
+            return [_child(k, "Platform Execution") for k in execution] + [_child("X-9", "Platform Planning")]
+        if parent == "X-2":
+            return [_child(k, epic_summary) for k in epic] + [_child("X-8", "Needs to be Fixed Bugs for GM Image Release")]
+        return []
+
+    api.get_child_work_items = MagicMock(side_effect=lookup)
+    return api
+
+
+@patch("checkbox_jira_bugger.jira_backend.Jira")
+def test_resolve_m1(mock_jira_cls):
+    api = _resolve_with(mock_jira_cls, "M1", ["X-2"], ["X-5"])
+    assert api._resolve_bugs_need_fixing_key() == "X-5"
+
+
+@patch("checkbox_jira_bugger.jira_backend.Jira")
+def test_resolve_missing_execution(mock_jira_cls):
+    api = _resolve_with(mock_jira_cls, "M1", [], ["X-5"])
+    with pytest.raises(ValueError, match="Platform Execution"):
+        api._resolve_bugs_need_fixing_key()
+
+
+@patch("checkbox_jira_bugger.jira_backend.Jira")
+def test_resolve_missing_epic(mock_jira_cls):
+    api = _resolve_with(mock_jira_cls, "M1", ["X-2"], [])
+    with pytest.raises(ValueError, match="M1 Image Release"):
+        api._resolve_bugs_need_fixing_key()
+
+
+@patch("checkbox_jira_bugger.jira_backend.Jira")
+def test_resolve_multiple_matches(mock_jira_cls):
+    api = _resolve_with(mock_jira_cls, "M1", ["X-2"], ["X-5", "X-6"])
+    with pytest.raises(ValueError):
+        api._resolve_bugs_need_fixing_key()

@@ -20,9 +20,7 @@ AttributeError if `self.mtrest` is used without being set by the caller.
 """
 import os
 import webbrowser
-from dataclasses import asdict
 from requests.auth import HTTPBasicAuth
-from checkbox_jira_bugger.jira_project_structure import PlatformEnablement
 from checkbox_jira_bugger.checkbox_report import (
     apply_cve_buffer_rule,
     is_valid_sku_name,
@@ -343,43 +341,10 @@ class jira_api:
                           (self.platform_tag, self.jira_config_json))
             raise ValueError("Platform initial bug key not found")
 
-        # New hierarchy
-        # Initialize hierarchical jira structure with their keys
         if not self.jira.issue_exists(self.platform_initial_bug_key):
             logging.error("Platform initial bug key %s does not exist in Jira!" % self.platform_initial_bug_key)
             raise ValueError("Platform initial bug key does not exist in Jira")
-        self.jira_top = PlatformEnablement(key=self.platform_initial_bug_key)
-        # Do BFS and query Jira for keys
-        from collections import deque
-        queue = deque([(self.jira_top, None, '')])
-        while queue:
-            current_obj, current_parent, current_id = queue.popleft()
-
-            if hasattr(current_obj, "__dataclass_fields__"):
-                # Add children to queue for next level processing
-                for field in current_obj.__dataclass_fields__:
-                    if field == "key" or field == "summary":
-                        continue
-                    value = getattr(current_obj, field)
-                    queue.append((value, current_obj, field))
-
-                if current_id != '':    # skip the root object
-                    ret = self.get_child_work_items(current_parent.key, summary=current_obj.summary)
-                    if len(ret) != 1:
-                        logging.error(
-                            "Expected exactly one child work item for %s with summary '%s', found %d items." %
-                            (current_parent.key, current_obj.summary, len(ret)))
-                        raise ValueError("Unexpected number of child work items found")
-                    current_obj.key = ret[0]['key']
-
-        # select bugs_need_fixing_key by milestone
-        if self.milestone == 'FC':
-            self.bugs_need_fixing_key = self.jira_top.platform_execution.needs_fixed_bugs_fc_image.key
-        elif self.milestone == 'GM':
-            self.bugs_need_fixing_key = self.jira_top.platform_execution.needs_fixed_bugs_gm_image.key
-        else:
-            logging.error("Unknown milestone %s" % self.milestone)
-            raise Exception("Unknown milestone %s" % self.milestone)
+        self.bugs_need_fixing_key = self._resolve_bugs_need_fixing_key()
 
         self.jirarest = jira_rest_api(jira_secrets_ini, self.jira_project_key)
         # See module docstring: mtrest is no longer constructed here. Callers
@@ -389,8 +354,6 @@ class jira_api:
         # test
         # self.collect_bugs_need_fixing()
 
-        # debug
-        self.debug_show_hierarchy()
 
     def get_child_work_items(self, parent_issue_key, summary: str = None):
         """
@@ -413,8 +376,25 @@ class jira_api:
             logging.error(f"Error retrieving sub-tasks for {parent_issue_key}: {e}")
             raise
 
-    def debug_show_hierarchy(self):
-        logging.debug(json.dumps(asdict(self.jira_top), indent=2, sort_keys=True))
+    def _resolve_bugs_need_fixing_key(self):
+        """Find the 'Needs to be Fixed Bugs for <milestone> Image Release' epic
+        under the platform's 'Platform Execution' objective."""
+        execution_summary = "Platform Execution"
+        epic_summary = "Needs to be Fixed Bugs for %s Image Release" % self.milestone
+        execution_key = self._get_single_child_key(self.platform_initial_bug_key, execution_summary)
+        return self._get_single_child_key(execution_key, epic_summary)
+
+    def _get_single_child_key(self, parent_key, summary):
+        # Filter client-side: Jira's `summary ~` text search tokenizes terms like
+        # "M1" so it can miss an existing epic.
+        ret = [i for i in self.get_child_work_items(parent_key)
+               if summary.lower() in i.get('fields', {}).get('summary', '').lower()]
+        if len(ret) != 1:
+            msg = "Expected exactly one '%s' under %s, found %d; please create it in Jira first" % (
+                summary, parent_key, len(ret))
+            logging.error(msg)
+            raise ValueError(msg)
+        return ret[0]['key']
 
     def collect_bugs_need_fixing(self):
         """
