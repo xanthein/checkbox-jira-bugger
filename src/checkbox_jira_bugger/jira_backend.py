@@ -661,6 +661,9 @@ class jira_api:
     def compose_attaching_comment(self, issue_key_has_attachment, afile):
         file_name = os.path.split(afile)[1]
         attachment_i = self.get_attachment_info(issue_key_has_attachment, file_name)
+        if attachment_i is None:
+            logging.warning("Attachment %s not found on %s" % (file_name, issue_key_has_attachment))
+            return ''
         return JIRA_ATTACHMENT_COMMENT.format(
             submission_file_name=attachment_i['filename'],
             attachment_url=attachment_i['content'])
@@ -1416,11 +1419,12 @@ def deal_with_failed_test_cases_common_test(
                     attach_comment_msg = bugmgr.compose_attaching_comment(
                         bugmgr.bugs_need_fixing_key, submission_tarball)
                     if item['id'] == 'miscellanea/cvescan':
-                        bugmgr.comment_bug(btlist[0], 'The test case failed on sku:%s with manifest:%s %s submission:%s\n%s\n%s' % (
-                            sku_name, manifest_name, manifest_version, submission_tarball, manifest_changed_msg, item['cve_append_message']))
+                        bugmgr.comment_bug(btlist[0], 'The test case failed on sku:%s with manifest:%s %s.\n%s\n%s\n%s' % (
+                            sku_name, manifest_name, manifest_version, manifest_changed_msg,
+                            item['cve_append_message'], attach_comment_msg))
                     else:
-                        bugmgr.comment_bug(btlist[0], 'The test case failed on sku:%s with manifest:%s %s submission:%s\n%s' % (
-                            sku_name, manifest_name, manifest_version, submission_tarball, manifest_changed_msg))
+                        bugmgr.comment_bug(btlist[0], 'The test case failed on sku:%s with manifest:%s %s.\n%s\n%s' % (
+                            sku_name, manifest_name, manifest_version, manifest_changed_msg, attach_comment_msg))
 
                     if btlist[0]['fields']['status']['name'] in ['Done', 'In Review']:
                         bugmgr.reopen_bug(btlist[0])
