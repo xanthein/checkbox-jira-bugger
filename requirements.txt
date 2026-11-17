@@ -4,7 +4,6 @@ certifi
 urllib3
 idna
 charset-normalizer
-gitpython
 dacite
 PyYAML
 distro

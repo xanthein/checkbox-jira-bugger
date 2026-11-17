@@ -73,8 +73,18 @@ Maps Canonical project names to Jira project keys, components, and
 objective/epic hierarchy. Consumed by `jira_backend.py`'s
 `bh_read_jira_config_file`/`bh_get_jira_project_key`/
 `bh_get_jira_platform_initial_key`/`bh_get_jira_target_objective`. Can be
-generated from the `oem-hw-info` repo via
-`jira_project_config_generator.py`.
+generated from Jira via `jira_project_config_generator.py`: every
+"Enable … Platform" Theme (any status) in the selected projects becomes a
+component entry, using the Theme's single Jira component as `component_name`.
+Rejected Themes are ignored. Themes with zero or several components are skipped
+with a warning; a component
+claimed by two Themes aborts the run (set the duplicate card to Rejected). Only the selected projects are replaced
+in the existing file; everything else is kept.
+
+```
+checkbox-jira-config-generator \
+    [--project {stella,somerville,sutton}]... [--output PATH] [--jira-secrets PATH]
+```
 
 ```json
 {

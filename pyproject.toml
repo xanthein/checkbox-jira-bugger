@@ -14,7 +14,6 @@ dependencies = [
     "urllib3",
     "idna",
     "charset-normalizer",
-    "gitpython",
     "dacite",
     "PyYAML",
     "distro",
@@ -22,6 +21,7 @@ dependencies = [
 
 [project.scripts]
 checkbox-jira-bugger = "checkbox_jira_bugger.cli:main"
+checkbox-jira-config-generator = "checkbox_jira_bugger.jira_project_config_generator:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
