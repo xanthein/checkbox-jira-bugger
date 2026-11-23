@@ -39,35 +39,25 @@ tag_mapping_table = {
 
 BUG_TITLE_TEMPLATE = '''[Sanity] {test_id} failed'''
 
-# NOTE: every meaningful line below is separated by a BLANK line (double
-# newline), not a single "\n". This is required, not cosmetic: confirmed
-# against a real Jira Cloud issue (STELLA-4127), Jira's storage layer
-# silently drops a single "\n" line break with zero separator (not even a
-# space), merging adjacent lines together -- only a blank line survives,
-# converted to a real line break (rendered back as a single "\n" when read
-# via the v2/string API). Without the blank lines, fields like "SKU:" and
-# "BIOS ID:" get jammed onto one unparseable line once Jira stores the bug.
-BUG_DESCRIPTION_TEMPLATE = '''
-[Summary]
+# Jira wiki markup. Additional Information lines are separated by a blank line
+# because Jira's storage layer drops single "\\n" breaks in plain paragraphs; the
+# parsers in jira_backend.py read these "Label: value" lines back.
+BUG_DESCRIPTION_TEMPLATE = '''h3. [Summary]
+*{test_id}* failed
+*certification_status:* {certification_status}
 
-{test_id} failed
-
-certification_status: {certification_status}
-
-[I/O log]
-
+h3. [I/O log]
+{{noformat}}
 {test_iolog}
+{{noformat}}
 
-[Reproduce Steps]
+h3. [Reproduce Steps]
+# sudo checkbox-cli run {test_full_id}
 
-1. sudo checkbox-cli run {test_full_id}
-
-[Results]
-
+h3. [Results]
 failed
 
-[Additional Information]
-
+h3. [Additional Information]
 Manifest: {manifest_name} {manifest_version}
 
 BIOS Version: {bios_version}
@@ -268,14 +258,14 @@ def format_bug(manifest_name, manifest_version, test_id, certification_status, t
     description = BUG_DESCRIPTION_TEMPLATE.format(
         test_id=test_id,
         certification_status=certification_status,
-        test_iolog=test_iolog,
+        test_iolog=str(test_iolog).replace('{noformat}', '\\{noformat}'),
         test_full_id=test_full_id,
-        manifest_name=manifest_name,
-        manifest_version=manifest_version,
-        bios_version=bios_version,
-        sku_number=sku_number,
-        sku_name=sku_name,
-        tester=tester)
+        manifest_name=str(manifest_name),
+        manifest_version=str(manifest_version),
+        bios_version=str(bios_version),
+        sku_number=str(sku_number),
+        sku_name=str(sku_name),
+        tester=str(tester))
     logging.info('========================[New Bug]==========================')
     logging.info(title)
     logging.info(description)

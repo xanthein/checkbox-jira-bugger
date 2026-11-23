@@ -56,37 +56,38 @@ def test_format_bug_returns_title_and_description():
     assert isinstance(description, str)
 
 
-def test_format_bug_description_separates_every_meaningful_line_with_a_blank_line():
-    """
-    Regression test confirmed against a real Jira Cloud issue (STELLA-4127):
-    when this description is submitted to Jira (as a plain string, via the
-    v2-compatible write path), Jira's storage layer silently drops single
-    "\\n" line breaks entirely (with zero separator, not even a space) --
-    only a blank line ("\\n\\n") survives, converted to a real line break.
-    Every field in [Additional Information] (Manifest/BIOS Version/SKU/
-    BIOS ID/Tester) must therefore be separated by a blank line, or they get
-    jammed together on Jira's side and become unparseable by
-    get_bug_manifest_version/get_bug_manifest_name/get_bug_skus.
-    """
-    _, description = checkbox_report.format_bug(
-        manifest_name="stella-manifest",
-        manifest_version="20260901-458",
-        test_id="audio/playback",
-        certification_status="blocker",
-        test_iolog="some io log",
-        test_full_id="com.canonical.certification::audio/playback",
-        bios_version="1.02.01",
-        sku_number="SKU123",
-        sku_name="Thor3-AMD-1_202308-32003",
-        tester="auto-sanity-bot",
-    )
-    manifest_line = "Manifest: stella-manifest 20260901-458"
-    bios_line = "BIOS Version: 1.02.01"
-    sku_line = "SKU: Thor3-AMD-1_202308-32003"
-    bios_id_line = "BIOS ID: SKU123"
-    tester_line = "Tester: auto-sanity-bot"
+KW = dict(
+    manifest_name="stella-manifest",
+    manifest_version="20260901-458",
+    test_id="audio/playback",
+    certification_status="blocker",
+    test_iolog="some io log",
+    test_full_id="com.canonical.certification::audio/playback",
+    bios_version="1.02.01",
+    sku_number="SKU123",
+    sku_name="Thor3-AMD-1_202308-32003",
+    tester="auto-sanity-bot",
+)
 
-    assert f"{manifest_line}\n\n{bios_line}" in description
-    assert f"{bios_line}\n\n{sku_line}" in description
-    assert f"{sku_line}\n\n{bios_id_line}" in description
-    assert f"{bios_id_line}\n\n{tester_line}" in description
+
+def test_format_bug_description_uses_wiki_layout():
+    _, d = checkbox_report.format_bug(**KW)
+    for h in ["[Summary]", "[I/O log]", "[Reproduce Steps]", "[Results]", "[Additional Information]"]:
+        assert f"h3. {h}" in d
+    assert "{noformat}\nsome io log\n{noformat}" in d
+    assert "# sudo checkbox-cli run com.canonical.certification::audio/playback" in d
+    for line in ["Manifest: stella-manifest 20260901-458", "BIOS Version: 1.02.01",
+                 "SKU: Thor3-AMD-1_202308-32003", "BIOS ID: SKU123", "Tester: auto-sanity-bot"]:
+        assert line in d
+    assert "Manifest: stella-manifest 20260901-458\n\nBIOS Version: 1.02.01" in d
+
+
+def test_format_bug_escapes_noformat_in_iolog():
+    _, d = checkbox_report.format_bug(**{**KW, "test_iolog": "a {noformat} b"})
+    assert "a \\{noformat} b" in d
+    assert d.count("{noformat}") - d.count("\\{noformat}") == 2
+
+
+def test_format_bug_empty_iolog():
+    _, d = checkbox_report.format_bug(**{**KW, "test_iolog": ""})
+    assert "{noformat}\n\n{noformat}" in d
