@@ -9,7 +9,7 @@ device-under-test (DUT).
 Config/secrets files (git-ignored, create these yourself). All paths are
 overridable via CLI flags; no secrets are hardcoded or committed.
 
-### `~/.checkbox-jira-bugger/secrets/jira_secrets.ini`
+### `~/.config/secrets/jira_secrets.ini`
 
 Jira account credentials and the Mattermost bot token (used to resolve a
 Mattermost username into an email address for bug assignment).
@@ -23,7 +23,7 @@ jira_apitoken = your-jira-api-token
 mt_token = your-mattermost-bot-token
 ```
 
-### `~/.checkbox-jira-bugger/secrets/c3_config.ini`
+### `~/.config/secrets/c3_secrets.ini`
 
 OAuth2 client-credentials used to obtain a bearer token from
 `https://certification.canonical.com/oauth2/token/`. Used to resolve

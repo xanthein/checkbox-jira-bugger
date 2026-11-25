@@ -22,9 +22,9 @@ from checkbox_jira_bugger import jira_backend
 from checkbox_jira_bugger.c3_client import C3Client, C3ApiError, DeviceNotFoundError
 from checkbox_jira_bugger.mattermost import MattermostClient, MattermostApiError
 
-BH_DEFAULT_JIRA_SECRET = "~/.checkbox-jira-bugger/secrets/jira_secrets.ini"
+BH_DEFAULT_JIRA_SECRET = "~/.config/secrets/jira_secrets.ini"
 BH_DEFAULT_JIRA_PROJECT_CONF = "~/.checkbox-jira-bugger/jira_project_config/jira_project_config.json"
-BH_DEFAULT_C3_CONFIG = "~/.checkbox-jira-bugger/secrets/c3_config.ini"
+BH_DEFAULT_C3_CONFIG = "~/.config/secrets/c3_secrets.ini"
 BH_DEFAULT_DUT_SSH_CONFIG = "~/.checkbox-jira-bugger/secrets/dut_ssh_config.ini"
 
 log = logging.getLogger(__name__)

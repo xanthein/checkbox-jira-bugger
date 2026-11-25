@@ -21,7 +21,7 @@ BH_DEFAULT_JIRA_PROJECT_CONF_PATH = "~/.checkbox-jira-bugger/jira_project_config
 OUTPUT_CONFIG_PATH = os.path.join(
     os.path.expanduser(BH_DEFAULT_JIRA_PROJECT_CONF_PATH), "jira_project_config.json"
 )
-DEFAULT_JIRA_SECRETS = "~/.checkbox-jira-bugger/secrets/jira_secrets.ini"
+DEFAULT_JIRA_SECRETS = "~/.config/secrets/jira_secrets.ini"
 JIRA_URL = "https://warthogs.atlassian.net/"
 JQL_ENABLE_PLATFORM_THEMES = (
     'project = "{project}" AND issuetype = Theme AND status != "Rejected" '
